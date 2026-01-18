@@ -11,7 +11,11 @@ import {
   X,
   ArrowLeft,
   Globe,
-  Loader2
+  Loader2,
+  Shield,
+  ShieldOff,
+  Cloud,
+  CloudOff
 } from 'lucide-react';
 import Link from 'next/link';
 import Swal from 'sweetalert2';
@@ -25,6 +29,8 @@ interface Record {
   ttl: number;
   priority: number | null;
   disabled: boolean;
+  proxied: boolean;
+  origin_ip: string | null;
 }
 
 interface Zone {
@@ -34,6 +40,7 @@ interface Zone {
 }
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA', 'PTR'];
+const PROXYABLE_TYPES = ['A', 'AAAA'];
 
 export default function RecordsPage() {
   const searchParams = useSearchParams();
@@ -44,13 +51,15 @@ export default function RecordsPage() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [proxyIP, setProxyIP] = useState<string>('');
   
   const [newRecord, setNewRecord] = useState({
     name: '',
     type: 'A',
     content: '',
     ttl: 3600,
-    priority: ''
+    priority: '',
+    proxied: false
   });
 
   const [editRecord, setEditRecord] = useState({
@@ -62,6 +71,7 @@ export default function RecordsPage() {
   useEffect(() => {
     if (zoneId) {
       fetchRecords();
+      fetchProxyStatus();
     }
   }, [zoneId]);
 
@@ -77,6 +87,87 @@ export default function RecordsPage() {
       console.error('Fetch error:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProxyStatus = async () => {
+    try {
+      const res = await fetch(`/api/proxy?zone_id=${zoneId}`);
+      const data = await res.json();
+      if (res.ok) {
+        setProxyIP(data.proxy_ip);
+      }
+    } catch (error) {
+      console.error('Fetch proxy status error:', error);
+    }
+  };
+
+  const handleToggleProxy = async (record: Record) => {
+    const newProxied = !record.proxied;
+    
+    // Show confirmation
+    const result = await Swal.fire({
+      title: newProxied ? 'เปิด Proxy?' : 'ปิด Proxy?',
+      html: newProxied 
+        ? `<div class="text-left">
+            <p class="mb-2">เมื่อเปิด Proxy:</p>
+            <ul class="list-disc list-inside text-sm text-slate-400">
+              <li>IP ที่แสดงจะเป็น <code class="text-sky-400">${proxyIP}</code></li>
+              <li>Traffic จะผ่าน Proxy Server ของเรา</li>
+              <li>IP จริง <code class="text-emerald-400">${record.content}</code> จะถูกซ่อน</li>
+            </ul>
+          </div>`
+        : `<div class="text-left">
+            <p class="mb-2">เมื่อปิด Proxy:</p>
+            <ul class="list-disc list-inside text-sm text-slate-400">
+              <li>IP จะแสดงเป็น <code class="text-emerald-400">${record.origin_ip || record.content}</code></li>
+              <li>Traffic จะไปยัง Origin โดยตรง</li>
+            </ul>
+          </div>`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: newProxied ? 'เปิด Proxy' : 'ปิด Proxy',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: newProxied ? '#0ea5e9' : '#f59e0b'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          record_id: record.id,
+          proxied: newProxied
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        Swal.fire({
+          icon: 'success',
+          title: 'สำเร็จ!',
+          text: data.message,
+          timer: 2000,
+          showConfirmButton: false
+        });
+        fetchRecords();
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'เกิดข้อผิดพลาด',
+          text: data.error
+        });
+      }
+    } catch (error) {
+      console.error('Toggle proxy error:', error);
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาด',
+        text: 'ไม่สามารถเปลี่ยนสถานะ Proxy ได้'
+      });
     }
   };
 
@@ -97,6 +188,18 @@ export default function RecordsPage() {
       const data = await res.json();
 
       if (res.ok) {
+        // If proxied is enabled, toggle it
+        if (newRecord.proxied && PROXYABLE_TYPES.includes(newRecord.type)) {
+          await fetch('/api/proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              record_id: data.record.id,
+              proxied: true
+            })
+          });
+        }
+
         Swal.fire({
           icon: 'success',
           title: 'สำเร็จ!',
@@ -105,7 +208,7 @@ export default function RecordsPage() {
           showConfirmButton: false
         });
         setShowAddForm(false);
-        setNewRecord({ name: '', type: 'A', content: '', ttl: 3600, priority: '' });
+        setNewRecord({ name: '', type: 'A', content: '', ttl: 3600, priority: '', proxied: false });
         fetchRecords();
       } else {
         Swal.fire({
@@ -211,6 +314,14 @@ export default function RecordsPage() {
     });
   };
 
+  // Helper function to get displayed IP
+  const getDisplayedIP = (record: Record): string => {
+    if (record.proxied && PROXYABLE_TYPES.includes(record.type)) {
+      return proxyIP || record.content;
+    }
+    return record.content;
+  };
+
   if (!zoneId) {
     return (
       <div className="text-center py-20">
@@ -266,67 +377,111 @@ export default function RecordsPage() {
         </button>
       </div>
 
+      {/* Proxy Info Banner */}
+      <div className="bg-gradient-to-r from-sky-500/10 to-indigo-500/10 border border-sky-500/30 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <Shield className="w-6 h-6 text-sky-400" />
+          <div>
+            <h3 className="font-semibold text-white">DNS Proxy</h3>
+            <p className="text-sm text-slate-400">
+              เปิด Proxy เพื่อซ่อน IP จริงและให้ Traffic ผ่าน Server ของเรา 
+              {/*<span className="text-sky-400 font-mono ml-1">({proxyIP})</span>*/}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Add Form */}
       {showAddForm && (
         <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
           <h3 className="text-lg font-semibold text-white mb-4">เพิ่ม Record ใหม่</h3>
-          <form onSubmit={handleAddRecord} className="grid grid-cols-1 md:grid-cols-6 gap-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Name</label>
-              <input
-                type="text"
-                value={newRecord.name}
-                onChange={(e) => setNewRecord({ ...newRecord, name: e.target.value })}
-                placeholder="@ หรือ subdomain"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Type</label>
-              <select
-                value={newRecord.type}
-                onChange={(e) => setNewRecord({ ...newRecord, type: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
-              >
-                {RECORD_TYPES.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm text-slate-400 mb-1">Content</label>
-              <input
-                type="text"
-                value={newRecord.content}
-                onChange={(e) => setNewRecord({ ...newRecord, content: e.target.value })}
-                placeholder="IP หรือ Value"
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">TTL</label>
-              <input
-                type="number"
-                value={newRecord.ttl}
-                onChange={(e) => setNewRecord({ ...newRecord, ttl: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
-              />
-            </div>
-            {(newRecord.type === 'MX' || newRecord.type === 'SRV') && (
+          <form onSubmit={handleAddRecord} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Priority</label>
+                <label className="block text-sm text-slate-400 mb-1">Name</label>
                 <input
-                  type="number"
-                  value={newRecord.priority}
-                  onChange={(e) => setNewRecord({ ...newRecord, priority: e.target.value })}
-                  placeholder="10"
+                  type="text"
+                  value={newRecord.name}
+                  onChange={(e) => setNewRecord({ ...newRecord, name: e.target.value })}
+                  placeholder="@ หรือ subdomain"
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  required
                 />
               </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Type</label>
+                <select
+                  value={newRecord.type}
+                  onChange={(e) => setNewRecord({ ...newRecord, type: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
+                >
+                  {RECORD_TYPES.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm text-slate-400 mb-1">Content</label>
+                <input
+                  type="text"
+                  value={newRecord.content}
+                  onChange={(e) => setNewRecord({ ...newRecord, content: e.target.value })}
+                  placeholder="IP หรือ Value"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">TTL</label>
+                <input
+                  type="number"
+                  value={newRecord.ttl}
+                  onChange={(e) => setNewRecord({ ...newRecord, ttl: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              {(newRecord.type === 'MX' || newRecord.type === 'SRV') && (
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Priority</label>
+                  <input
+                    type="number"
+                    value={newRecord.priority}
+                    onChange={(e) => setNewRecord({ ...newRecord, priority: e.target.value })}
+                    placeholder="10"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Proxy Toggle for new record */}
+            {PROXYABLE_TYPES.includes(newRecord.type) && (
+              <div className="flex items-center gap-3 p-3 bg-slate-900/50 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setNewRecord({ ...newRecord, proxied: !newRecord.proxied })}
+                  className={`relative w-12 h-6 rounded-full transition-colors ${
+                    newRecord.proxied ? 'bg-sky-500' : 'bg-slate-600'
+                  }`}
+                >
+                  <span className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
+                    newRecord.proxied ? 'left-7' : 'left-1'
+                  }`} />
+                </button>
+                <div className="flex items-center gap-2">
+                  {newRecord.proxied ? (
+                    <Cloud className="w-4 h-4 text-sky-400" />
+                  ) : (
+                    <CloudOff className="w-4 h-4 text-slate-400" />
+                  )}
+                  <span className={newRecord.proxied ? 'text-sky-400' : 'text-slate-400'}>
+                    {newRecord.proxied ? 'Proxied' : 'DNS Only'}
+                  </span>
+                </div>
+              </div>
             )}
-            <div className="md:col-span-6 flex gap-2">
+
+            <div className="flex gap-2">
               <button
                 type="submit"
                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg text-white font-medium hover:opacity-90 transition-opacity"
@@ -356,8 +511,8 @@ export default function RecordsPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">Name</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">Type</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">Content</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">Proxy</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">TTL</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-slate-400">Priority</th>
                 <th className="px-4 py-3 text-right text-sm font-medium text-slate-400">Actions</th>
               </tr>
             </thead>
@@ -396,7 +551,42 @@ export default function RecordsPage() {
                           className="w-full px-2 py-1 bg-slate-900 border border-slate-600 rounded text-white text-sm focus:outline-none focus:border-sky-500"
                         />
                       ) : (
-                        <span className="font-mono text-sm text-slate-300 break-all">{record.content}</span>
+                        <div className="flex flex-col">
+                          <span className="font-mono text-sm text-slate-300 break-all">
+                            {getDisplayedIP(record)}
+                          </span>
+                          {record.proxied && record.origin_ip && (
+                            <span className="text-xs text-slate-500">
+                              Origin: {record.origin_ip}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {PROXYABLE_TYPES.includes(record.type) ? (
+                        <button
+                          onClick={() => handleToggleProxy(record)}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                            record.proxied 
+                              ? 'bg-sky-500/20 text-sky-400 hover:bg-sky-500/30' 
+                              : 'bg-slate-600/50 text-slate-400 hover:bg-slate-600'
+                          }`}
+                        >
+                          {record.proxied ? (
+                            <>
+                              <Cloud className="w-3 h-3" />
+                              Proxied
+                            </>
+                          ) : (
+                            <>
+                              <CloudOff className="w-3 h-3" />
+                              DNS Only
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-xs">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -410,9 +600,6 @@ export default function RecordsPage() {
                       ) : (
                         <span className="text-sm text-slate-400">{record.ttl}</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm text-slate-400">{record.priority || '-'}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
                       {editingId === record.id ? (
@@ -452,6 +639,31 @@ export default function RecordsPage() {
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-4">
+        <h3 className="font-semibold text-white mb-3">📖 คำอธิบาย Proxy Status</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-sky-500/20 text-sky-400">
+              <Cloud className="w-3 h-3" />
+              Proxied
+            </span>
+            <span className="text-slate-400">
+              Traffic ผ่าน Proxy Server
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-slate-600/50 text-slate-400">
+              <CloudOff className="w-3 h-3" />
+              DNS Only
+            </span>
+            <span className="text-slate-400">
+              DNS ตอบ IP จริง - Traffic ไปยัง Origin โดยตรง
+            </span>
+          </div>
         </div>
       </div>
     </div>

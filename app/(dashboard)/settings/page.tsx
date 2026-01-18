@@ -5,14 +5,11 @@ import {
   Settings, 
   User, 
   Lock, 
-  Bell, 
   Shield,
   Save,
   Loader2,
   Eye,
-  EyeOff,
-  Server,
-  Globe
+  EyeOff
 } from 'lucide-react';
 import Swal from 'sweetalert2';
 
@@ -186,7 +183,6 @@ export default function SettingsPage() {
   const tabs = [
     { id: 'profile', label: 'โปรไฟล์', icon: User },
     { id: 'security', label: 'ความปลอดภัย', icon: Lock },
-    { id: 'dns', label: 'DNS Settings', icon: Globe },
   ];
 
   return (
@@ -346,45 +342,6 @@ export default function SettingsPage() {
                     เปลี่ยนรหัสผ่าน
                   </button>
                 </form>
-              </div>
-            )}
-
-            {/* DNS Settings Tab */}
-            {activeTab === 'dns' && (
-              <div>
-                <h2 className="text-lg font-semibold text-white mb-6 flex items-center gap-2">
-                  <Globe className="w-5 h-5 text-sky-500" />
-                  DNS Server Settings
-                </h2>
-                <div className="space-y-4">
-                  <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Nameservers</h3>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <Server className="w-4 h-4 text-emerald-400" />
-                        <span className="font-mono text-white">ns1.nexzdns.my</span>
-                        <span className="text-slate-500">→</span>
-                        <span className="font-mono text-slate-400">72.62.74.183</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Server className="w-4 h-4 text-emerald-400" />
-                        <span className="font-mono text-white">ns2.nexzdns.my</span>
-                        <span className="text-slate-500">→</span>
-                        <span className="font-mono text-slate-400">72.62.74.183</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900/50 border border-slate-700 rounded-lg p-4">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">วิธีใช้งาน</h3>
-                    <ol className="list-decimal list-inside text-sm text-slate-300 space-y-2">
-                      <li>เพิ่มโดเมนในระบบ</li>
-                      <li>ไปที่ผู้ให้บริการโดเมน (Registrar)</li>
-                      <li>เปลี่ยน Nameservers เป็น ns1.nexzdns.my และ ns2.nexzdns.my</li>
-                      <li>รอ DNS propagate (อาจใช้เวลา 24-48 ชั่วโมง)</li>
-                    </ol>
-                  </div>
-                </div>
               </div>
             )}
           </div>

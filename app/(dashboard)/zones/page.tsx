@@ -11,7 +11,9 @@ import {
   Search,
   RefreshCw,
   Server,
-  FileText
+  FileText,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface Zone {
@@ -26,6 +28,10 @@ export default function ZonesPage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [copiedNS, setCopiedNS] = useState<string | null>(null);
+
+  const NS1 = 'ns1.nexzdns.my';
+  const NS2 = 'ns2.nexzdns.my';
 
   const fetchZones = async () => {
     setLoading(true);
@@ -45,6 +51,16 @@ export default function ZonesPage() {
   useEffect(() => {
     fetchZones();
   }, []);
+
+  const handleCopyNS = async (ns: string) => {
+    try {
+      await navigator.clipboard.writeText(ns);
+      setCopiedNS(ns);
+      setTimeout(() => setCopiedNS(null), 2000);
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+  };
 
   const handleAddZone = async () => {
     const { value: domain } = await Swal.fire({
@@ -285,12 +301,55 @@ export default function ZonesPage() {
         )}
       </div>
 
-      {/* Info Box */}
+      {/* Info Box with Nameservers */}
       <div className="glass rounded-2xl p-6 border border-amber-500/30 bg-amber-500/5">
-        <h3 className="font-semibold text-amber-400 mb-2">💡 วิธีการใช้งาน</h3>
+        <h3 className="font-semibold text-amber-400 mb-4">💡 วิธีการใช้งาน</h3>
+        
+        {/* Nameserver Info */}
+        <div className="mb-4 p-4 bg-slate-900/50 rounded-xl">
+          <p className="text-sm text-slate-400 mb-3">ชี้ Nameserver ของโดเมนมาที่:</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg group">
+              <div className="flex items-center gap-3">
+                <Server className="w-4 h-4 text-sky-400" />
+                <span className="font-mono text-white">{NS1}</span>
+              </div>
+              <button
+                onClick={() => handleCopyNS(NS1)}
+                className="p-2 text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
+                title="คัดลอก"
+              >
+                {copiedNS === NS1 ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg group">
+              <div className="flex items-center gap-3">
+                <Server className="w-4 h-4 text-sky-400" />
+                <span className="font-mono text-white">{NS2}</span>
+              </div>
+              <button
+                onClick={() => handleCopyNS(NS2)}
+                className="p-2 text-slate-400 hover:text-sky-400 hover:bg-sky-500/10 rounded-lg transition-colors"
+                title="คัดลอก"
+              >
+                {copiedNS === NS2 ? (
+                  <Check className="w-4 h-4 text-emerald-400" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Steps */}
         <ol className="text-slate-400 space-y-2 text-sm">
           <li>1. เพิ่มโดเมนที่คุณต้องการจัดการ DNS</li>
-          <li>2. ไปที่ผู้ให้บริการจดโดเมน แล้วเปลี่ยน Nameserver ไปที่ ns1 และ ns2 ของเรา</li>
+          <li>2. ไปที่ผู้ให้บริการจดโดเมน แล้วเปลี่ยน Nameserver เป็นค่าด้านบน</li>
           <li>3. รอการ propagate 24-48 ชั่วโมง</li>
           <li>4. เริ่มจัดการ DNS Records ได้เลย!</li>
         </ol>
